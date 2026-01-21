@@ -84,41 +84,19 @@ class DingtalkMessageEvent(AstrMessageEvent):
         await self.send_with_client(self.client, message)
         await super().send(message)
 
-    async def send_streaming(self, generator, use_fallback: bool = False):
-        if not self.adapter or not self.adapter.card_template_id:
-            logger.warning(f"DingTalk streaming is enabled, but 'card_template_id' is not configured for platform '{self.platform_meta.id}'. Falling back to text streaming.")
-            # Fallback to default behavior (buffer and send)
-            buffer = None
-            async for chain in generator:
-                if not buffer:
-                    buffer = chain
-                else:
-                    buffer.chain.extend(chain.chain)
+    async def _fallback_to_text(self, generator):
+        buffer = None
+        async for chain in generator:
             if not buffer:
-                return None
+                buffer = chain
+            else:
+                buffer.chain.extend(chain.chain)
+        
+        if buffer:
             buffer.squash_plain()
             await self.send(buffer)
-            return await super().send_streaming(generator, use_fallback)
 
-        # Create card
-        msg_id = self.message_obj.message_id
-        incoming_msg = self.message_obj.raw_message
-        created = await self.adapter.create_message_card(msg_id, incoming_msg)
-        
-        if not created:
-            # Fallback to default behavior (buffer and send)
-            buffer = None
-            async for chain in generator:
-                if not buffer:
-                    buffer = chain
-                else:
-                    buffer.chain.extend(chain.chain)
-            if not buffer:
-                return None
-            buffer.squash_plain()
-            await self.send(buffer)
-            return await super().send_streaming(generator, use_fallback)
-        
+    async def _send_card_streaming(self, generator, msg_id: str):
         full_content = ""
         seq = 0
         try:
@@ -126,6 +104,19 @@ class DingtalkMessageEvent(AstrMessageEvent):
                 for segment in chain.chain:
                     if isinstance(segment, Comp.Plain):
                         full_content += segment.text
+                    elif isinstance(segment, Comp.At):
+                        icm = cast(dingtalk_stream.ChatbotMessage, self.message_obj.raw_message)
+                        if str(segment.qq) in str(icm.sender_id or ""):
+                            full_content += f"@{icm.sender_staff_id} "
+                        else:
+                            full_content += f"@{segment.qq} "
+                    elif isinstance(segment, Comp.Image):
+                        if segment.file:
+                            if segment.file.startswith(("http://", "https://")):
+                                image_url = segment.file
+                            else:
+                                image_url = await segment.register_to_file_service()
+                            full_content += f"![image]({image_url})\n"
                 
                 seq += 1
                 if seq % 2 == 0: # Update every 2 chunks to be more responsive than 8
@@ -136,4 +127,19 @@ class DingtalkMessageEvent(AstrMessageEvent):
             logger.error(f"DingTalk streaming error: {e}")
             # Try to ensure final state is sent or cleaned up?
             await self.adapter.send_card_message(msg_id, full_content, is_final=True)
+
+    async def _init_card_streaming(self) -> bool:
+        if not self.adapter or not self.adapter.card_template_id:
+            logger.warning(f"DingTalk streaming is enabled, but 'card_template_id' is not configured for platform '{self.platform_meta.id}'. Falling back to text streaming.")
+            return False
+
+        msg_id = self.message_obj.message_id
+        incoming_msg = self.message_obj.raw_message
+        return await self.adapter.create_message_card(msg_id, incoming_msg)
+
+    async def send_streaming(self, generator, use_fallback: bool = False):
+        if await self._init_card_streaming():
+            await self._send_card_streaming(generator, self.message_obj.message_id)
+        else:
+            await self._fallback_to_text(generator)
 

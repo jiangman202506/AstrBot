@@ -76,6 +76,7 @@ class DingtalkPlatformAdapter(Platform):
         self.client_ = client  # 用于 websockets 的 client
         self._shutdown_event: threading.Event | None = None
         self.card_template_id = platform_config.get("card_template_id")
+        self.card_content_key = platform_config.get("card_content_key", "content")
         self.card_instance_id_dict = {}
 
     def _id_to_sid(self, dingtalk_id: str | None) -> str:
@@ -106,7 +107,7 @@ class DingtalkPlatformAdapter(Platform):
             return False
         
         card_instance = dingtalk_stream.AICardReplier(self.client_, incoming_message)
-        card_data = {"content": ""} # Initial content empty
+        card_data = {self.card_content_key: ""} # Initial content empty
         
         try:
             card_instance_id = await card_instance.async_create_and_deliver_card(
@@ -124,7 +125,7 @@ class DingtalkPlatformAdapter(Platform):
             return
 
         card_instance, card_instance_id = self.card_instance_id_dict[message_id]
-        content_key = 'content'
+        content_key = self.card_content_key
         
         try:
             # 钉钉卡片流式更新
