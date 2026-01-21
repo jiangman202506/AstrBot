@@ -1,5 +1,5 @@
 import asyncio
-from typing import cast, Any
+from typing import Any, cast
 
 import dingtalk_stream
 
@@ -119,9 +119,11 @@ class DingtalkMessageEvent(AstrMessageEvent):
                             full_content += f"![image]({image_url})\n"
                 
                 seq += 1
-                if seq % 2 == 0: # Update every 2 chunks to be more responsive than 8
-                    await self.adapter.send_card_message(msg_id, full_content, is_final=False)
-            
+                if seq % 2 == 0:  # Update every 2 chunks to be more responsive than 8
+                    await self.adapter.send_card_message(
+                        msg_id, full_content, is_final=False
+                    )
+
             await self.adapter.send_card_message(msg_id, full_content, is_final=True)
         except Exception as e:
             logger.error(f"DingTalk streaming error: {e}")

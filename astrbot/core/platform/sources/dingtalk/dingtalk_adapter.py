@@ -101,11 +101,13 @@ class DingtalkPlatformAdapter(Platform):
             id=cast(str, self.config.get("id")),
             support_streaming_message=True,
         )
-    
-    async def create_message_card(self, message_id: str, incoming_message: dingtalk_stream.ChatbotMessage):
+
+    async def create_message_card(
+        self, message_id: str, incoming_message: dingtalk_stream.ChatbotMessage
+    ):
         if not self.card_template_id:
             return False
-        
+
         card_instance = dingtalk_stream.AICardReplier(self.client_, incoming_message)
         card_data = {self.card_content_key: ""} # Initial content empty
         
@@ -129,10 +131,7 @@ class DingtalkPlatformAdapter(Platform):
         
         try:
             # 钉钉卡片流式更新
-            # append=False always for full replacement if we are managing the buffer
-            # AICardReplier logic might vary, but LangBot uses append=False and sends full content?
-            # LangBot: content_value=content, append=False
-            
+
             await card_instance.async_streaming(
                 card_instance_id,
                 content_key=content_key,
@@ -148,14 +147,14 @@ class DingtalkPlatformAdapter(Platform):
                 await card_instance.async_streaming(
                     card_instance_id,
                     content_key=content_key,
-                    content_value=content, # Keep existing content
+                    content_value=content,  # Keep existing content
                     append=False,
                     finished=True,
                     failed=True,
                 )
             except Exception:
                 pass
-        
+
         if is_final:
             self.card_instance_id_dict.pop(message_id, None)
 
